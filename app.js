@@ -1,6 +1,6 @@
 (async function(){'use strict';
 const C=window.CollectionCore,$=id=>document.getElementById(id),STORE='pogo-bg-collection-v1';
-let catalog,records,state,groups,noticeTimer;const opened=new Set();
+let catalog,records,state,groups,noticeTimer,sprites={p:[],s:[],g:{}};const spriteCache=new Map();const opened=new Set();
 let viewMode='list';try{const saved=localStorage.getItem('pogo-bg-view-mode');if(saved==='grouped'||saved==='list')viewMode=saved;}catch{}
 const pageSize=()=>viewMode==='list'?60:24;let shown=pageSize();
 const filters=['search','bgFilter','pokeFilter','yearFilter','categoryFilter','ownedFilter','typeFilter','statusFilter'];
@@ -42,13 +42,52 @@ function visibleGroups(){
  });
 }
 function dateLabel(b){if(!b.date)return '初登場日：確認中';if(b.datePrecision==='year')return b.date+'年（日付未確認）';return b.date.replaceAll('-','/')+(planned(b)?' 初登場予定':' 初登場');}
-function showImage(b){if(!safeImage(b.image))return;$('imageTitle').textContent=b.name;$('largeImage').src=b.image;$('largeImage').alt=b.name+'の背景画像';$('imageCaption').textContent=dateLabel(b)+' ・ '+(b.type==='location'?'ロケーション背景':'スペシャル背景');$('imageDialog').showModal();}
+function spriteInfo(e){
+ if(!e||e.custom||!e.backgroundId)return null;
+ const id=e.id.slice(e.backgroundId.length+1),shiny=$('typeFilter').value==='shiny';
+ const override=sprites.o&&sprites.o[e.id];if(override){const f=override[shiny?1:0];return f?{url:'https://raw.githubusercontent.com/PokeMiners/pogo_assets/master/Images/Pokemon%20-%20256x256/Addressable%20Assets/'+encodeURIComponent(f),raw:true}:null;}
+ if(sprites.p.includes(id)){
+  if(shiny&&!sprites.s.includes(id))return null;
+  return {url:'https://raw.githubusercontent.com/psoren/pogo-bg/main/docs/img/pm/'+(shiny?'s/':'')+encodeURIComponent(id)+'.png',raw:false};
+ }
+ const game=sprites.g[id],file=game&&game[shiny?1:0];
+ return file?{url:'https://raw.githubusercontent.com/PokeMiners/pogo_assets/master/Images/Pokemon%20-%20256x256/Addressable%20Assets/'+encodeURIComponent(file),raw:true}:null;
+}
+function readySprite(info){
+ if(spriteCache.has(info.url))return spriteCache.get(info.url);
+ const ready=new Promise((resolve,reject)=>{
+  const img=new Image();if(info.raw)img.crossOrigin='anonymous';
+  img.onload=()=>{
+   if(!info.raw){resolve(info.url);return;}
+   try{
+    // Trim the transparent margins of the game icon for consistent presentation.
+    const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
+    const pixels=ctx.getImageData(0,0,c.width,c.height).data;let x0=c.width,y0=c.height,x1=-1,y1=-1;
+    for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++)if(pixels[(y*c.width+x)*4+3]>12){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
+    if(x1<x0){reject(Error('empty icon'));return;}
+    const crop=document.createElement('canvas');crop.width=x1-x0+1+12;crop.height=y1-y0+1+12;crop.getContext('2d').drawImage(img,x0,y0,x1-x0+1,y1-y0+1,6,6,x1-x0+1,y1-y0+1);resolve(crop.toDataURL('image/png'));
+   }catch{resolve(info.url);}
+  };img.onerror=()=>reject(Error('image unavailable'));img.src=info.url;
+ });spriteCache.set(info.url,ready);return ready;
+}
+function mountSprite(parent,e){
+ const info=spriteInfo(e),img=document.createElement('img');img.className='pokemon-sprite';img.alt=e.name+($('typeFilter').value==='shiny'?' 色違い':'');img.hidden=true;parent.append(img);
+ const missing=()=>{img.remove();parent.append(el('span','sprite-unavailable','画像未確認'));};
+ if(!info){missing();return;}
+ readySprite(info).then(url=>{img.onload=()=>{img.hidden=false;};img.onerror=missing;img.src=url;}).catch(missing);
+}
+function showImage(b,e=null){
+ if(!safeImage(b.image))return;
+ $('imageTitle').textContent=e?e.name+'｜'+b.name:b.name;$('largeImage').src=b.image;$('largeImage').alt=b.name+'の背景画像';
+ const stage=$('imageStage');stage.querySelectorAll('.pokemon-sprite,.sprite-unavailable').forEach(x=>x.remove());stage.classList.toggle('with-pokemon',!!e);if(e)mountSprite(stage,e);
+ $('imageCaption').textContent=dateLabel(b)+' ・ '+(b.type==='location'?'ロケーション背景':'スペシャル背景')+(e?' ・ 背景とポケモンのプレビュー':'');$('imageDialog').showModal();
+}
 function makeRow(e){const row=el('div','entry'),info=el('div','details');info.append(el('b','',e.name));if(e.evolved)info.append(el('small','','進化・姿の変更で引き継ぎ'));row.append(info);const checks=el('div','checks');for(const t of visibleTypes(e)){const l=el('label');const cb=document.createElement('input');cb.type='checkbox';cb.checked=owned(e,t);cb.setAttribute('aria-label',`${e.name} ${e.background} ${t==='shiny'?'色違い':'通常色'} 所持`);cb.addEventListener('change',()=>{state.checks[C.checkKey(e,t)]=cb.checked;save();stats();if($('ownedFilter').value)render();else updateProgress();});l.append(cb,document.createTextNode(t==='shiny'?'✨色違い':'通常色'));checks.append(l);}if(e.shiny===false&&!$('typeFilter').value)checks.append(el('span','unavailable','色違いなし'));if(e.shiny==null&&!$('typeFilter').value)info.append(el('small','','色違いの入手可否は確認中'));row.append(checks);return row;}
 function progressInfo(b){let n=0,total=0;for(const e of b.entries)for(const t of C.types(e,'')){total++;if(owned(e,t))n++;}return {n,total};}
 function fillProgress(node,b){const {n,total}=progressInfo(b);node.replaceChildren();const bar=document.createElement('progress');bar.max=total||1;bar.value=n;bar.setAttribute('aria-label',b.name+'の所持状況');node.append(bar,document.createTextNode(`${n} / ${total} チェック`));}
 function updateProgress(){document.querySelectorAll('.progress').forEach(node=>{const b=groups.find(b=>b.id===node.dataset.id);if(b)fillProgress(node,b);});}
-function makePhoto(b){let photo;
- if(safeImage(b.image)){photo=el('button','bg-photo');photo.setAttribute('aria-label',b.name+'の背景画像を拡大');const img=document.createElement('img');img.src=b.image;img.alt=b.name;img.loading='lazy';img.decoding='async';img.addEventListener('error',()=>{photo.className='bg-photo placeholder';photo.textContent='画像を確認中';photo.disabled=true;});photo.append(img);photo.addEventListener('click',()=>showImage(b));}
+function makePhoto(b,e=null){let photo;
+ if(safeImage(b.image)){photo=el('button','bg-photo');photo.setAttribute('aria-label',(e?e.name+'と':'')+b.name+'の背景画像を拡大');const img=document.createElement('img');img.src=b.image;img.alt=b.name;img.loading='lazy';img.decoding='async';img.addEventListener('error',()=>{photo.className='bg-photo placeholder';photo.textContent='画像を確認中';photo.disabled=true;});photo.append(img);if(e)mountSprite(photo,e);photo.addEventListener('click',()=>showImage(b,e));}
  else photo=el('div','bg-photo placeholder','画像は続報待ち');
 return photo;}
 function makeCard(b,forceOpen=false){
@@ -60,7 +99,7 @@ function makeCard(b,forceOpen=false){
  if(b.sources.length||b.notes||b.pendingDetails){const foot=el('div','bg-foot');if(b.notes)foot.append(el('div','',b.notes));if(b.pendingDetails)foot.append(el('div','','対象ポケモンは続報待ち'));b.sources.slice(0,3).forEach((url,i)=>{if(!/^https:\/\//.test(url))return;const a=el('a','',i?'出典'+(i+1):'出典');a.href=url;a.target='_blank';a.rel='noopener noreferrer';foot.append(a);});card.append(foot);}return card;
 }
 function makeListRow(e,b){
- const row=makeRow(e);row.classList.add('pokemon-row');row.prepend(makePhoto(b));const info=row.querySelector('.details');
+ const row=makeRow(e);row.classList.add('pokemon-row');row.prepend(makePhoto(b,e));const info=row.querySelector('.details');
  const background=el('small','row-background',b.name);info.insertBefore(background,info.children[1]||null);
  info.append(el('small','row-date',dateLabel(b)));
  if(planned(b))info.append(el('span','badge planned','開催予定'));
@@ -84,10 +123,10 @@ function download(name,text,mime){const blob=new Blob([text],{type:mime}),a=docu
 function addRecords(items){if(!Array.isArray(items))throw Error('一覧の形式が正しくありません');let n=0;const all=allEntries();for(const item of items){if(!item||typeof item.name!=='string'||typeof item.background!=='string')continue;const name=item.name.trim(),background=item.background.trim();if(!name||!background)continue;const existing=all.find(e=>e.id===item.id||C.norm(e.name)+'|||'+C.norm(e.background)===C.norm(name)+'|||'+C.norm(background));let e=existing;if(!e){e={id:'custom:'+C.legacyKey({name,background}),name,background,category:String(item.category||''),date:/^\d{4}-\d{2}-\d{2}$/.test(item.date)?item.date:null,image:safeImage(item.image)?item.image:'',shiny:item.shiny!==false,custom:true};state.custom.push(e);all.push(e);n++;}for(const t of ['normal','shiny'])if(item[t+'_owned']==='true'||item[t+'_owned']===true)state.checks[C.checkKey(e,t)]=true;}return n;}
 $('closeImage').onclick=()=>$('imageDialog').close();$('imageDialog').addEventListener('click',e=>{if(e.target===$('imageDialog'))$('imageDialog').close();});
 try{
- const response=await fetch('catalog.json?v=20261024-3');if(!response.ok)throw Error('背景データを取得できません');catalog=await response.json();if(catalog.parts){const parts=await Promise.all(catalog.parts.map(async path=>{const r=await fetch(path+'?v=20261024-3');if(!r.ok)throw Error('背景一覧を取得できません');return r.json();}));catalog.backgrounds=parts.flat();}records=C.flatten(catalog);
+ const response=await fetch('catalog.json?v=20261024-3');if(!response.ok)throw Error('背景データを取得できません');catalog=await response.json();try{const sr=await fetch('sprites.json?v=6-pokemon');if(sr.ok)sprites=await sr.json();}catch{}if(catalog.parts){const parts=await Promise.all(catalog.parts.map(async path=>{const r=await fetch(path+'?v=20261024-3');if(!r.ok)throw Error('背景一覧を取得できません');return r.json();}));catalog.backgrounds=parts.flat();}records=C.flatten(catalog);
  let raw=null,bad=false;try{const s=localStorage.getItem(STORE);if(s)raw=JSON.parse(s);}catch{bad=true;notice('保存済みデータを読み込めませんでした。元のデータはそのまま残しています。',true);}
  state=C.migrate(raw,records);rebuild();refreshOptions();if(!bad)save();
- const future=groups.filter(planned).length;$('intro').textContent=`国内・海外の${groups.length}背景・${records.length.toLocaleString()}組み合わせを収録（開催予定${future}背景を含む）。実装順に表示します。「一覧」は1行ずつ、「背景別」は背景ごとに表示。画像をタップで拡大できます。`;
+ const future=groups.filter(planned).length;$('intro').textContent=`国内・海外の${groups.length}背景・${records.length.toLocaleString()}組み合わせを収録（開催予定${future}背景を含む）。実装順に表示します。「一覧」は1行ずつ、「背景別」は背景ごとに表示。一覧ではポケモンの姿も重ねて表示。画像をタップで拡大できます。`;
  $('coverage').textContent=`データ確認日：${catalog.asOf.replaceAll('-','/')}。確認できたロケーション背景・スペシャル背景と告知済み予定を掲載しています。資料間の差異や今後の追加により、未確認の項目が残る場合があります。`;
  for(const source of catalog.sources){const a=el('a','',source.name);a.href=source.url;a.target='_blank';a.rel='noopener noreferrer';$('sources').append(a);}
  for(const [id,mode] of [['listViewBtn','list'],['groupedViewBtn','grouped']]){$(id).disabled=false;$(id).onclick=()=>{viewMode=mode;shown=pageSize();try{localStorage.setItem('pogo-bg-view-mode',mode);}catch{}render();};}
