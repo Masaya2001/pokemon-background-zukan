@@ -3,13 +3,16 @@ const norm=s=>String(s||'').normalize('NFKC').trim();
 const legacyKey=e=>`${String(e.name||'').trim()}|||${String(e.background||'').trim()}`;
 const recordKey=e=>e.id||legacyKey(e);
 const checkKey=(e,t)=>recordKey(e)+'|||'+t;
-function flatten(catalog){return catalog.backgrounds.flatMap(b=>b.pokemon.map(p=>({id:b.id+':'+p.id,name:p.name,background:b.name,category:b.type==='location'?'ロケーション背景':'スペシャル背景',image:b.image,date:p.availableFrom||b.date,availableFrom:p.availableFrom,backgroundId:b.id,shiny:p.shiny,evolved:p.evolved,dex:p.dex})));}
+function backgroundName(s){return String(s||'').replace(/GO[ 　]*(?:フェス|Fest)/g,'GO Fest').replace(/GO[ 　]*(?:ツアー|Tour)/g,'GO Tour').replace(/(GO (?:Fest|Tour))(?=\d)/g,'$1 ');}
+function flatten(catalog){const hidden=new Set(catalog.hiddenMiddlePokemonIds||[]);return catalog.backgrounds.flatMap(b=>b.pokemon.map(p=>({id:b.id+':'+p.id,name:p.name,background:backgroundName(b.name),category:b.type==='location'?'ロケーション背景':'スペシャル背景',image:b.image,date:p.availableFrom||b.date,availableFrom:p.availableFrom,backgroundId:b.id,shiny:p.shiny,evolved:p.evolved,dex:p.dex,hiddenMiddle:hidden.has(p.id)})));}
+function visibleEntries(entries){return entries.filter(e=>!e.hiddenMiddle);}
+
 function migrate(raw,records){
- const byId=new Map(records.map(e=>[e.id,e])),byLegacy=new Map(records.map(e=>[norm(e.name)+'|||'+norm(e.background),e]));
+ const byId=new Map(records.map(e=>[e.id,e])),byLegacy=new Map(records.map(e=>[norm(e.name)+'|||'+norm(backgroundName(e.background)),e]));
  const saved=raw&&typeof raw==='object'?raw:{};const checks={};const custom=[];
  const inputs=Array.isArray(saved.custom)?saved.custom:Array.isArray(saved.entries)?saved.entries:[];
  const sourceChecks=saved.checks&&typeof saved.checks==='object'?saved.checks:{};
- const resolve=e=>byId.get(e.id)||byLegacy.get(norm(e.name)+'|||'+norm(e.background));
+ const resolve=e=>byId.get(e.id)||byLegacy.get(norm(e.name)+'|||'+norm(backgroundName(e.background)));
  for(const e of inputs){
   if(!e||typeof e.name!=='string'||typeof e.background!=='string'||!e.name.trim()||!e.background.trim())continue;
   let target=resolve(e);
@@ -24,5 +27,5 @@ function parseCSV(s){const rows=[];let row=[],cell='',quoted=false;for(let i=0;i
 function types(e,filter){return ['normal','shiny'].filter(t=>(!filter||filter===t)&&(t==='normal'||e.shiny!==false));}
 function previewShiny(e,filter){return filter!=='normal'&&e.shiny===true;}
 function sortGroups(a,b){const ak=a.datePrecision==='day'?a.date:'9999',bk=b.datePrecision==='day'?b.date:'9999';return ak.localeCompare(bk)||a.id.localeCompare(b.id);}
-const api={norm,legacyKey,recordKey,checkKey,flatten,migrate,parseCSV,types,previewShiny,sortGroups};root.CollectionCore=api;if(typeof module!=='undefined')module.exports=api;
+const api={norm,legacyKey,recordKey,checkKey,flatten,backgroundName,visibleEntries,migrate,parseCSV,types,previewShiny,sortGroups};root.CollectionCore=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window==='undefined'?globalThis:window);
