@@ -33,7 +33,9 @@ function migrate(raw,records){
 function parseCSV(s){const rows=[];let row=[],cell='',quoted=false;for(let i=0;i<s.length;i++){const c=s[i];if(c==='"'){if(quoted&&s[i+1]==='"'){cell+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){row.push(cell);cell='';}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&s[i+1]==='\n')i++;row.push(cell);if(row.some(v=>v!==''))rows.push(row);row=[];cell='';}else cell+=c;}if(quoted)throw Error('CSVの引用符が閉じていません');row.push(cell);if(row.some(v=>v!==''))rows.push(row);if(!rows.length)return [];const head=rows.shift().map(x=>x.trim().replace(/^\ufeff/,''));if(!head.includes('name')||!head.includes('background'))throw Error('CSVにnameとbackground列が必要です');return rows.map(r=>Object.fromEntries(head.map((h,i)=>[h,r[i]||''])));}
 function types(e,filter){return statusKeys.filter(t=>(!filter||filter===t)&&(!['shiny','shiny_lucky'].includes(t)||e.shiny!==false));}
 function ownedTypes(e){return types(e,'').filter(t=>t!=='trade_pending');}
+function isOwned(e,checks){return ownedTypes(e).some(t=>!!checks[checkKey(e,t)]);}
+function collectionProgress(entries,checks){return {n:entries.filter(e=>isOwned(e,checks)).length,total:entries.length};}
 function previewShiny(e,filter){return filter!=='normal'&&e.shiny===true;}
 function sortGroups(a,b){const ak=a.datePrecision==='day'?a.date:'9999',bk=b.datePrecision==='day'?b.date:'9999';return ak.localeCompare(bk)||a.id.localeCompare(b.id);}
-const api={statusKeys,statusLabels,ownedTypes,norm,legacyKey,recordKey,checkKey,flatten,resolveRecord,backgroundName,visibleEntries,migrate,parseCSV,types,previewShiny,sortGroups};root.CollectionCore=api;if(typeof module!=='undefined')module.exports=api;
+const api={statusKeys,statusLabels,ownedTypes,isOwned,collectionProgress,norm,legacyKey,recordKey,checkKey,flatten,resolveRecord,backgroundName,visibleEntries,migrate,parseCSV,types,previewShiny,sortGroups};root.CollectionCore=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window==='undefined'?globalThis:window);
