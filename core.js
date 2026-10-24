@@ -22,6 +22,7 @@ function migrate(raw,records){
 }
 function parseCSV(s){const rows=[];let row=[],cell='',quoted=false;for(let i=0;i<s.length;i++){const c=s[i];if(c==='"'){if(quoted&&s[i+1]==='"'){cell+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){row.push(cell);cell='';}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&s[i+1]==='\n')i++;row.push(cell);if(row.some(v=>v!==''))rows.push(row);row=[];cell='';}else cell+=c;}if(quoted)throw Error('CSVの引用符が閉じていません');row.push(cell);if(row.some(v=>v!==''))rows.push(row);if(!rows.length)return [];const head=rows.shift().map(x=>x.trim().replace(/^\ufeff/,''));if(!head.includes('name')||!head.includes('background'))throw Error('CSVにnameとbackground列が必要です');return rows.map(r=>Object.fromEntries(head.map((h,i)=>[h,r[i]||''])));}
 function types(e,filter){return ['normal','shiny'].filter(t=>(!filter||filter===t)&&(t==='normal'||e.shiny!==false));}
+function previewShiny(e,filter){return filter!=='normal'&&e.shiny===true;}
 function sortGroups(a,b){const ak=a.datePrecision==='day'?a.date:'9999',bk=b.datePrecision==='day'?b.date:'9999';return ak.localeCompare(bk)||a.id.localeCompare(b.id);}
-const api={norm,legacyKey,recordKey,checkKey,flatten,migrate,parseCSV,types,sortGroups};root.CollectionCore=api;if(typeof module!=='undefined')module.exports=api;
+const api={norm,legacyKey,recordKey,checkKey,flatten,migrate,parseCSV,types,previewShiny,sortGroups};root.CollectionCore=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window==='undefined'?globalThis:window);
