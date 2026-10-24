@@ -1,0 +1,77 @@
+(async function(){'use strict';
+const C=window.CollectionCore,$=id=>document.getElementById(id),STORE='pogo-bg-collection-v1';
+let catalog,records,state,groups,shown=24,noticeTimer;const opened=new Set();
+const filters=['search','bgFilter','pokeFilter','yearFilter','categoryFilter','ownedFilter','typeFilter','statusFilter'];
+function notice(t,error=false){clearTimeout(noticeTimer);$('notice').textContent=t;$('notice').style.color=error?'#ffb6b6':'#a3e9b9';if(!error)noticeTimer=setTimeout(()=>$('notice').textContent='',7000);}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
+function safeImage(url){return typeof url==='string'&&(/^https:\/\//i.test(url)||/^images\/[a-z0-9_-]+\.webp$/.test(url));}
+function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+const TODAY=today();
+const planned=b=>b.datePrecision==='day'&&b.date>TODAY;
+const owned=(e,t)=>!!state.checks[C.checkKey(e,t)];
+function save(){try{localStorage.setItem(STORE,JSON.stringify(state));return true;}catch{notice('保存に失敗しました。バックアップを保存し、端末の空き容量を確認してください。',true);return false;}}
+function rebuild(){
+ groups=catalog.backgrounds.map(b=>({...b,entries:records.filter(e=>e.backgroundId===b.id)}));
+ const extras=new Map();for(const e of state.custom){const id='custom-bg:'+e.background;let g=extras.get(id);if(!g){g={id,name:e.background,date:e.date||null,datePrecision:e.date?'day':'unknown',type:'custom',image:e.image||'',sources:[],entries:[]};extras.set(id,g);}g.entries.push(e);}
+ groups.push(...extras.values());groups.sort(C.sortGroups);
+}
+function option(value,label){const o=el('option','',label);o.value=value;return o;}
+function refreshOptions(){
+ const bg=$('bgFilter').value,poke=$('pokeFilter').value,year=$('yearFilter').value;
+ $('bgFilter').replaceChildren(option('','すべての背景'),...groups.map(b=>option(b.id,b.name)));
+ $('pokeFilter').replaceChildren(option('','すべてのポケモン'),...[...new Set([...records,...state.custom].map(e=>e.name))].sort((a,b)=>a.localeCompare(b,'ja')).map(n=>option(n,n)));
+ $('yearFilter').replaceChildren(option('','すべての年'),...[...new Set(groups.filter(b=>b.date).map(b=>b.date.slice(0,4)))].sort().map(y=>option(y,y+'年')));
+ $('bgFilter').value=bg;$('pokeFilter').value=poke;$('yearFilter').value=year;
+}
+function allEntries(){return [...records,...state.custom];}
+function stats(){const all=allEntries();let total=0,count=0;for(const e of all)for(const t of C.types(e,'')){total++;if(owned(e,t))count++;}$('ownedCount').textContent=count.toLocaleString();$('totalCount').textContent=total.toLocaleString();$('rate').textContent=total?Math.round(count/total*100)+'%':'0%';}
+function visibleTypes(e){return C.types(e,$('typeFilter').value).filter(t=>!$('ownedFilter').value||($('ownedFilter').value==='owned'?owned(e,t):!owned(e,t)));}
+function visibleGroups(){
+ const q=C.norm($('search').value).toLocaleLowerCase();
+ return groups.flatMap(b=>{
+  if($('bgFilter').value&&$('bgFilter').value!==b.id)return [];
+  if($('yearFilter').value&&(!b.date||!b.date.startsWith($('yearFilter').value)))return [];
+  if($('categoryFilter').value&&$('categoryFilter').value!==b.type)return [];
+  if($('statusFilter').value&&($('statusFilter').value==='planned'?!planned(b):planned(b)))return [];
+  const entries=b.entries.filter(e=>(!$('pokeFilter').value||e.name===$('pokeFilter').value)&&(!q||C.norm(e.name+' '+b.name+' '+(e.category||'')).toLocaleLowerCase().includes(q))&&visibleTypes(e).length);
+  if(!entries.length&&!b.pendingDetails)return [];
+  if(!entries.length&&b.pendingDetails&&(q&&!C.norm(b.name).toLowerCase().includes(q)||$('pokeFilter').value||$('ownedFilter').value||$('typeFilter').value))return [];
+  return [{...b,visible:entries}];
+ });
+}
+function dateLabel(b){if(!b.date)return '初登場日：確認中';if(b.datePrecision==='year')return b.date+'年（日付未確認）';return b.date.replaceAll('-','/')+(planned(b)?' 初登場予定':' 初登場');}
+function showImage(b){if(!safeImage(b.image))return;$('imageTitle').textContent=b.name;$('largeImage').src=b.image;$('largeImage').alt=b.name+'の背景画像';$('imageCaption').textContent=dateLabel(b)+' ・ '+(b.type==='location'?'ロケーション背景':'スペシャル背景');$('imageDialog').showModal();}
+function makeRow(e){const row=el('div','entry'),info=el('div','details');info.append(el('b','',e.name));if(e.evolved)info.append(el('small','','進化・姿の変更で引き継ぎ'));row.append(info);const checks=el('div','checks');for(const t of visibleTypes(e)){const l=el('label');const cb=document.createElement('input');cb.type='checkbox';cb.checked=owned(e,t);cb.setAttribute('aria-label',`${e.name} ${e.background} ${t==='shiny'?'色違い':'通常色'} 所持`);cb.addEventListener('change',()=>{state.checks[C.checkKey(e,t)]=cb.checked;save();stats();if($('ownedFilter').value)render();else updateProgress();});l.append(cb,document.createTextNode(t==='shiny'?'✨色違い':'通常色'));checks.append(l);}if(e.shiny===false&&!$('typeFilter').value)checks.append(el('span','unavailable','色違いなし'));if(e.shiny==null&&!$('typeFilter').value)info.append(el('small','','色違いの入手可否は確認中'));row.append(checks);return row;}
+function progressInfo(b){let n=0,total=0;for(const e of b.entries)for(const t of C.types(e,'')){total++;if(owned(e,t))n++;}return {n,total};}
+function fillProgress(node,b){const {n,total}=progressInfo(b);node.replaceChildren();const bar=document.createElement('progress');bar.max=total||1;bar.value=n;bar.setAttribute('aria-label',b.name+'の所持状況');node.append(bar,document.createTextNode(`${n} / ${total} チェック`));}
+function updateProgress(){document.querySelectorAll('.progress').forEach(node=>{const b=groups.find(b=>b.id===node.dataset.id);if(b)fillProgress(node,b);});}
+function makeCard(b,forceOpen=false){
+ const card=el('article','bg-card'),top=el('div','bg-top');let photo;
+ if(safeImage(b.image)){photo=el('button','bg-photo');photo.setAttribute('aria-label',b.name+'の背景画像を拡大');const img=document.createElement('img');img.src=b.image;img.alt=b.name;img.loading='lazy';img.decoding='async';img.addEventListener('error',()=>{photo.className='bg-photo placeholder';photo.textContent='画像を確認中';photo.disabled=true;});photo.append(img);photo.addEventListener('click',()=>showImage(b));}
+ else photo=el('div','bg-photo placeholder','画像は続報待ち');
+ const info=el('div','bg-info'),badges=el('div','badges');badges.append(el('span','badge '+(b.type==='special'?'special':''),b.type==='location'?'ロケーション':b.type==='special'?'スペシャル':'自分で追加'));
+ if(planned(b))badges.append(el('span','badge planned','開催予定'));if(b.datePrecision!=='day')badges.append(el('span','badge unknown','日付未確認'));
+ info.append(badges,el('h2','',b.name),el('small','bg-date',dateLabel(b)));const p=el('div','progress');p.dataset.id=b.id;fillProgress(p,b);info.append(p);top.append(photo,info);card.append(top);
+ if(b.visible.length){const details=document.createElement('details'),summary=el('summary','',`対象ポケモン ${b.visible.length}件`);details.open=forceOpen||opened.has(b.id);details.append(summary);let populated=false;const populate=()=>{if(populated||!details.open)return;populated=true;details.append(...b.visible.map(makeRow));};populate();details.addEventListener('toggle',()=>{if(details.open){opened.add(b.id);populate();}else opened.delete(b.id);});card.append(details);}
+ if(b.sources.length||b.notes||b.pendingDetails){const foot=el('div','bg-foot');if(b.notes)foot.append(el('div','',b.notes));if(b.pendingDetails)foot.append(el('div','','対象ポケモンは続報待ち'));b.sources.slice(0,3).forEach((url,i)=>{if(!/^https:\/\//.test(url))return;const a=el('a','',i?'出典'+(i+1):'出典');a.href=url;a.target='_blank';a.rel='noopener noreferrer';foot.append(a);});card.append(foot);}return card;
+}
+function render(){stats();const list=visibleGroups(),totalEntries=list.reduce((n,b)=>n+b.visible.length,0);$('resultCount').textContent=`${list.length}背景 / ${totalEntries.toLocaleString()}組み合わせ`;$('results').replaceChildren();const force=!!($('search').value||$('pokeFilter').value||$('bgFilter').value||$('ownedFilter').value);if(!list.length)$('results').append(el('p','empty','条件に合う項目がありません'));else $('results').append(...list.slice(0,shown).map(b=>makeCard(b,force)));$('moreBtn').hidden=shown>=list.length;$('moreBtn').textContent=`もっと表示（残り${Math.max(0,list.length-shown)}背景）`;}
+function download(name,text,mime){const blob=new Blob([text],{type:mime}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+function addRecords(items){if(!Array.isArray(items))throw Error('一覧の形式が正しくありません');let n=0;const all=allEntries();for(const item of items){if(!item||typeof item.name!=='string'||typeof item.background!=='string')continue;const name=item.name.trim(),background=item.background.trim();if(!name||!background)continue;const existing=all.find(e=>e.id===item.id||C.norm(e.name)+'|||'+C.norm(e.background)===C.norm(name)+'|||'+C.norm(background));let e=existing;if(!e){e={id:'custom:'+C.legacyKey({name,background}),name,background,category:String(item.category||''),date:/^\d{4}-\d{2}-\d{2}$/.test(item.date)?item.date:null,image:safeImage(item.image)?item.image:'',shiny:item.shiny!==false,custom:true};state.custom.push(e);all.push(e);n++;}for(const t of ['normal','shiny'])if(item[t+'_owned']==='true'||item[t+'_owned']===true)state.checks[C.checkKey(e,t)]=true;}return n;}
+$('closeImage').onclick=()=>$('imageDialog').close();$('imageDialog').addEventListener('click',e=>{if(e.target===$('imageDialog'))$('imageDialog').close();});
+try{
+ const response=await fetch('catalog.json?v=20261024-3');if(!response.ok)throw Error('背景データを取得できません');catalog=await response.json();if(catalog.parts){const parts=await Promise.all(catalog.parts.map(async path=>{const r=await fetch(path+'?v=20261024-3');if(!r.ok)throw Error('背景一覧を取得できません');return r.json();}));catalog.backgrounds=parts.flat();}records=C.flatten(catalog);
+ let raw=null,bad=false;try{const s=localStorage.getItem(STORE);if(s)raw=JSON.parse(s);}catch{bad=true;notice('保存済みデータを読み込めませんでした。元のデータはそのまま残しています。',true);}
+ state=C.migrate(raw,records);rebuild();refreshOptions();if(!bad)save();
+ const future=groups.filter(planned).length;$('intro').textContent=`国内・海外の${groups.length}背景・${records.length.toLocaleString()}組み合わせを収録（開催予定${future}背景を含む）。実装順に表示します。背景画像をタップで拡大、対象ポケモンはカードを開いてチェックできます。`;
+ $('coverage').textContent=`データ確認日：${catalog.asOf.replaceAll('-','/')}。確認できたロケーション背景・スペシャル背景と告知済み予定を掲載しています。資料間の差異や今後の追加により、未確認の項目が残る場合があります。`;
+ for(const source of catalog.sources){const a=el('a','',source.name);a.href=source.url;a.target='_blank';a.rel='noopener noreferrer';$('sources').append(a);}
+ for(const id of filters)$(id).addEventListener(id==='search'?'input':'change',()=>{shown=24;render();});
+ $('resetFilters').onclick=()=>{for(const id of filters)$(id).value='';shown=24;render();};$('moreBtn').onclick=()=>{shown+=24;render();};
+ $('exportBtn').onclick=()=>download('pokemon-go-background-backup.json',JSON.stringify({...state,exportedAt:new Date().toISOString(),entries:allEntries()},null,2),'application/json');
+ const csvCell=x=>'"'+String(x??'').replaceAll('"','""')+'"';$('exportCsv').onclick=()=>download('pokemon-go-background-list.csv','\ufeffname,background,category,image,normal_owned,shiny_owned,id,date\n'+allEntries().map(e=>[e.name,e.background,e.category,e.image,owned(e,'normal'),owned(e,'shiny'),e.id,e.date].map(csvCell).join(',')).join('\n'),'text/csv;charset=utf-8');
+ $('addBtn').onclick=()=>{const n=addRecords([{name:$('addName').value,background:$('addBg').value,category:$('addCategory').value,image:$('addImage').value,date:$('addDate').value}]);if(n){save();rebuild();refreshOptions();render();for(const id of ['addName','addBg','addCategory','addImage','addDate'])$(id).value='';notice('項目を追加しました');}else notice('ポケモン名と背景名を入力してください。同じ項目は重複登録できません。',true);};
+ $('importBtn').onclick=()=>$('file').click();$('file').onchange=async ev=>{const f=ev.target.files[0];if(!f)return;try{if(f.size>10000000)throw Error('10MB以下のファイルを選んでください');const text=await f.text();if(f.name.toLowerCase().endsWith('.csv'))notice(`${addRecords(C.parseCSV(text))}件追加しました`);else{const data=JSON.parse(text);if(Array.isArray(data))notice(`${addRecords(data)}件追加しました`);else if(data&&Array.isArray(data.entries)&&data.checks&&typeof data.checks==='object'){if(!confirm('バックアップのチェック状態と追加項目で現在の記録を置き換えます。復元しますか？'))return;state=C.migrate(data,records);notice('バックアップを復元しました');}else throw Error('バックアップの形式が正しくありません');}save();rebuild();refreshOptions();render();}catch(e){notice('読込に失敗しました：'+e.message,true);}finally{ev.target.value='';}};
+ render();
+}catch(e){notice('読み込みに失敗しました：'+e.message+'。画面を再読み込みしてください。',true);$('intro').textContent='背景データを読み込めませんでした。';}
+})();
