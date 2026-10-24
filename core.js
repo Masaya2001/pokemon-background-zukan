@@ -3,7 +3,7 @@ const norm=s=>String(s||'').normalize('NFKC').trim();
 const legacyKey=e=>`${String(e.name||'').trim()}|||${String(e.background||'').trim()}`;
 const recordKey=e=>e.id||legacyKey(e);
 const checkKey=(e,t)=>recordKey(e)+'|||'+t;
-function backgroundName(s){return String(s||'').replace(/GO[ 　]*(?:フェス|Fest)/g,'GO Fest').replace(/GO[ 　]*(?:ツアー|Tour)/g,'GO Tour').replace(/(GO (?:Fest|Tour))(?=\d)/g,'$1 ');}
+function backgroundName(s){return String(s||'').replace(/GO[ 　]*(?:フェス|Fest)/g,'GO Fest').replace(/GO[ 　]*(?:ツアー|Tour)/g,'GO Tour').replace(/(GO (?:Fest|Tour))(?=\d)/g,'$1 ').replace(/GO Fest 2025（(ザシアン|ザマゼンタ)）/g,'GO Fest 2025（グローバル・$1）').replace('GO Fest 2026（グローバル）','GO Fest 2026（グローバル／伝説への道共通）');}
 function flatten(catalog){const hidden=new Set(catalog.hiddenMiddlePokemonIds||[]);return catalog.backgrounds.flatMap(b=>b.pokemon.map(p=>({id:b.id+':'+p.id,name:p.name,background:backgroundName(b.name),category:b.type==='location'?'ロケーション背景':'スペシャル背景',image:b.image,date:p.availableFrom||b.date,availableFrom:p.availableFrom,backgroundId:b.id,shiny:p.shiny,evolved:p.evolved,dex:p.dex,hiddenMiddle:hidden.has(p.id)})));}
 function visibleEntries(entries){return entries.filter(e=>!e.hiddenMiddle);}
 
