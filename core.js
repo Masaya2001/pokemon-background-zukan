@@ -3,7 +3,7 @@ const norm=s=>String(s||'').normalize('NFKC').trim();
 const legacyKey=e=>`${String(e.name||'').trim()}|||${String(e.background||'').trim()}`;
 const recordKey=e=>e.id||legacyKey(e);
 const checkKey=(e,t)=>recordKey(e)+'|||'+t;
-function flatten(catalog){return catalog.backgrounds.flatMap(b=>b.pokemon.map(p=>({id:b.id+':'+p.id,name:p.name,background:b.name,category:b.type==='location'?'ロケーション背景':'スペシャル背景',image:b.image,date:b.date,backgroundId:b.id,shiny:p.shiny,evolved:p.evolved,dex:p.dex})));}
+function flatten(catalog){return catalog.backgrounds.flatMap(b=>b.pokemon.map(p=>({id:b.id+':'+p.id,name:p.name,background:b.name,category:b.type==='location'?'ロケーション背景':'スペシャル背景',image:b.image,date:p.availableFrom||b.date,availableFrom:p.availableFrom,backgroundId:b.id,shiny:p.shiny,evolved:p.evolved,dex:p.dex})));}
 function migrate(raw,records){
  const byId=new Map(records.map(e=>[e.id,e])),byLegacy=new Map(records.map(e=>[norm(e.name)+'|||'+norm(e.background),e]));
  const saved=raw&&typeof raw==='object'?raw:{};const checks={};const custom=[];

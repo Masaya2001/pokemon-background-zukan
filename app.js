@@ -10,6 +10,7 @@ function safeImage(url){return typeof url==='string'&&(/^https:\/\//i.test(url)|
 function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 const TODAY=today();
 const planned=b=>b.datePrecision==='day'&&b.date>TODAY;
+const entryPlanned=(e,b)=>e.availableFrom?e.availableFrom>TODAY:planned(b);
 const owned=(e,t)=>!!state.checks[C.checkKey(e,t)];
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state));return true;}catch{notice('保存に失敗しました。バックアップを保存し、端末の空き容量を確認してください。',true);return false;}}
 function rebuild(){
@@ -34,9 +35,9 @@ function visibleGroups(){
   if($('bgFilter').value&&$('bgFilter').value!==b.id)return [];
   if($('yearFilter').value&&(!b.date||!b.date.startsWith($('yearFilter').value)))return [];
   if($('categoryFilter').value&&$('categoryFilter').value!==b.type)return [];
-  if($('statusFilter').value&&($('statusFilter').value==='planned'?!planned(b):planned(b)))return [];
-  const entries=b.entries.filter(e=>(!$('pokeFilter').value||e.name===$('pokeFilter').value)&&(!q||C.norm(e.name+' '+b.name+' '+(e.category||'')).toLocaleLowerCase().includes(q))&&visibleTypes(e).length);
+  const entries=b.entries.filter(e=>(!$('statusFilter').value||($('statusFilter').value==='planned'?entryPlanned(e,b):!entryPlanned(e,b)))&&(!$('pokeFilter').value||e.name===$('pokeFilter').value)&&(!q||C.norm(e.name+' '+b.name+' '+(e.category||'')).toLocaleLowerCase().includes(q))&&visibleTypes(e).length);
   if(!entries.length&&!b.pendingDetails)return [];
+  if(!entries.length&&$('statusFilter').value&&($('statusFilter').value==='planned'?!planned(b):planned(b)))return [];
   if(!entries.length&&b.pendingDetails&&(q&&!C.norm(b.name).toLowerCase().includes(q)||$('pokeFilter').value||$('ownedFilter').value||$('typeFilter').value))return [];
   return [{...b,visible:entries}];
  });
@@ -82,7 +83,7 @@ function showImage(b,e=null){
  const stage=$('imageStage');stage.querySelectorAll('.pokemon-sprite,.sprite-unavailable').forEach(x=>x.remove());stage.classList.toggle('with-pokemon',!!e);if(e)mountSprite(stage,e);
  $('imageCaption').textContent=dateLabel(b)+' ・ '+(b.type==='location'?'ロケーション背景':'スペシャル背景')+(e?' ・ 背景とポケモンのプレビュー':'');$('imageDialog').showModal();
 }
-function makeRow(e){const row=el('div','entry'),info=el('div','details');info.append(el('b','',e.name));if(e.evolved)info.append(el('small','','進化・姿の変更で引き継ぎ'));row.append(info);const checks=el('div','checks');for(const t of visibleTypes(e)){const l=el('label');const cb=document.createElement('input');cb.type='checkbox';cb.checked=owned(e,t);cb.setAttribute('aria-label',`${e.name} ${e.background} ${t==='shiny'?'色違い':'通常色'} 所持`);cb.addEventListener('change',()=>{state.checks[C.checkKey(e,t)]=cb.checked;save();stats();if($('ownedFilter').value)render();else updateProgress();});l.append(cb,document.createTextNode(t==='shiny'?'✨色違い':'通常色'));checks.append(l);}if(e.shiny===false&&!$('typeFilter').value)checks.append(el('span','unavailable','色違いなし'));if(e.shiny==null&&!$('typeFilter').value)info.append(el('small','','色違いの入手可否は確認中'));row.append(checks);return row;}
+function makeRow(e){const row=el('div','entry'),info=el('div','details');info.append(el('b','',e.name));if(e.availableFrom&&e.availableFrom>TODAY)info.append(el('span','badge planned',e.availableFrom.replaceAll('-','/')+' 開催予定'));if(e.evolved)info.append(el('small','','進化・姿の変更で引き継ぎ'));row.append(info);const checks=el('div','checks');for(const t of visibleTypes(e)){const l=el('label');const cb=document.createElement('input');cb.type='checkbox';cb.checked=owned(e,t);cb.setAttribute('aria-label',`${e.name} ${e.background} ${t==='shiny'?'色違い':'通常色'} 所持`);cb.addEventListener('change',()=>{state.checks[C.checkKey(e,t)]=cb.checked;save();stats();if($('ownedFilter').value)render();else updateProgress();});l.append(cb,document.createTextNode(t==='shiny'?'✨色違い':'通常色'));checks.append(l);}if(e.shiny===false&&!$('typeFilter').value)checks.append(el('span','unavailable','色違いなし'));if(e.shiny==null&&!$('typeFilter').value)info.append(el('small','','色違いの入手可否は確認中'));row.append(checks);return row;}
 function progressInfo(b){let n=0,total=0;for(const e of b.entries)for(const t of C.types(e,'')){total++;if(owned(e,t))n++;}return {n,total};}
 function fillProgress(node,b){const {n,total}=progressInfo(b);node.replaceChildren();const bar=document.createElement('progress');bar.max=total||1;bar.value=n;bar.setAttribute('aria-label',b.name+'の所持状況');node.append(bar,document.createTextNode(`${n} / ${total} チェック`));}
 function updateProgress(){document.querySelectorAll('.progress').forEach(node=>{const b=groups.find(b=>b.id===node.dataset.id);if(b)fillProgress(node,b);});}
@@ -94,15 +95,15 @@ function makeCard(b,forceOpen=false){
  const card=el('article','bg-card'),top=el('div','bg-top'),photo=makePhoto(b);
  const info=el('div','bg-info'),badges=el('div','badges');badges.append(el('span','badge '+(b.type==='special'?'special':''),b.type==='location'?'ロケーション':b.type==='special'?'スペシャル':'自分で追加'));
  if(planned(b))badges.append(el('span','badge planned','開催予定'));if(b.datePrecision!=='day')badges.append(el('span','badge unknown','日付未確認'));
- info.append(badges,el('h2','',b.name),el('small','bg-date',dateLabel(b)));const p=el('div','progress');p.dataset.id=b.id;fillProgress(p,b);info.append(p);top.append(photo,info);card.append(top);
+ info.append(badges,el('h2','',b.name),el('small','bg-date',dateLabel(e.availableFrom?{date:e.availableFrom,datePrecision:'day'}:b)));const p=el('div','progress');p.dataset.id=b.id;fillProgress(p,b);info.append(p);top.append(photo,info);card.append(top);
  if(b.visible.length){const details=document.createElement('details'),summary=el('summary','',`対象ポケモン ${b.visible.length}件`);details.open=forceOpen||opened.has(b.id);details.append(summary);let populated=false;const populate=()=>{if(populated||!details.open)return;populated=true;details.append(...b.visible.map(makeRow));};populate();details.addEventListener('toggle',()=>{if(details.open){opened.add(b.id);populate();}else opened.delete(b.id);});card.append(details);}
  if(b.sources.length||b.notes||b.pendingDetails){const foot=el('div','bg-foot');if(b.notes)foot.append(el('div','',b.notes));if(b.pendingDetails)foot.append(el('div','','対象ポケモンは続報待ち'));b.sources.slice(0,3).forEach((url,i)=>{if(!/^https:\/\//.test(url))return;const a=el('a','',i?'出典'+(i+1):'出典');a.href=url;a.target='_blank';a.rel='noopener noreferrer';foot.append(a);});card.append(foot);}return card;
 }
 function makeListRow(e,b){
  const row=makeRow(e);row.classList.add('pokemon-row');row.prepend(makePhoto(b,e));const info=row.querySelector('.details');
  const background=el('small','row-background',b.name);info.insertBefore(background,info.children[1]||null);
- info.append(el('small','row-date',dateLabel(b)));
- if(planned(b))info.append(el('span','badge planned','開催予定'));
+ info.append(el('small','row-date',dateLabel(e.availableFrom?{date:e.availableFrom,datePrecision:'day'}:b)));
+ if(!e.availableFrom&&planned(b))info.append(el('span','badge planned','開催予定'));
  return row;
 }
 function render(){
@@ -123,7 +124,7 @@ function download(name,text,mime){const blob=new Blob([text],{type:mime}),a=docu
 function addRecords(items){if(!Array.isArray(items))throw Error('一覧の形式が正しくありません');let n=0;const all=allEntries();for(const item of items){if(!item||typeof item.name!=='string'||typeof item.background!=='string')continue;const name=item.name.trim(),background=item.background.trim();if(!name||!background)continue;const existing=all.find(e=>e.id===item.id||C.norm(e.name)+'|||'+C.norm(e.background)===C.norm(name)+'|||'+C.norm(background));let e=existing;if(!e){e={id:'custom:'+C.legacyKey({name,background}),name,background,category:String(item.category||''),date:/^\d{4}-\d{2}-\d{2}$/.test(item.date)?item.date:null,image:safeImage(item.image)?item.image:'',shiny:item.shiny!==false,custom:true};state.custom.push(e);all.push(e);n++;}for(const t of ['normal','shiny'])if(item[t+'_owned']==='true'||item[t+'_owned']===true)state.checks[C.checkKey(e,t)]=true;}return n;}
 $('closeImage').onclick=()=>$('imageDialog').close();$('imageDialog').addEventListener('click',e=>{if(e.target===$('imageDialog'))$('imageDialog').close();});
 try{
- const response=await fetch('catalog.json?v=20261024-7-road');if(!response.ok)throw Error('背景データを取得できません');catalog=await response.json();try{const sr=await fetch('sprites.json?v=6-pokemon');if(sr.ok)sprites=await sr.json();}catch{}if(catalog.parts){const parts=await Promise.all(catalog.parts.map(async path=>{const r=await fetch(path+'?v=20261024-7-road');if(!r.ok)throw Error('背景一覧を取得できません');return r.json();}));catalog.backgrounds=parts.flat();}records=C.flatten(catalog);
+ const response=await fetch('catalog.json?v=20261024-8-community');if(!response.ok)throw Error('背景データを取得できません');catalog=await response.json();try{const sr=await fetch('sprites.json?v=8-community');if(sr.ok)sprites=await sr.json();}catch{}if(catalog.parts){const parts=await Promise.all(catalog.parts.map(async path=>{const r=await fetch(path+'?v=20261024-8-community');if(!r.ok)throw Error('背景一覧を取得できません');return r.json();}));catalog.backgrounds=parts.flat();}records=C.flatten(catalog);
  let raw=null,bad=false;try{const s=localStorage.getItem(STORE);if(s)raw=JSON.parse(s);}catch{bad=true;notice('保存済みデータを読み込めませんでした。元のデータはそのまま残しています。',true);}
  state=C.migrate(raw,records);rebuild();refreshOptions();if(!bad)save();
  const future=groups.filter(planned).length;$('intro').textContent=`国内・海外の${groups.length}背景・${records.length.toLocaleString()}組み合わせを収録（開催予定${future}背景を含む）。実装順に表示します。「一覧」は1行ずつ、「背景別」は背景ごとに表示。一覧ではポケモンの姿も重ねて表示。画像をタップで拡大できます。`;
