@@ -12,7 +12,7 @@ const TODAY=today();
 const planned=b=>b.datePrecision==='day'&&b.date>TODAY;
 const entryPlanned=(e,b)=>e.availableFrom?e.availableFrom>TODAY:planned(b);
 const owned=(e,t)=>!!state.checks[C.checkKey(e,t)];
-function save(){try{localStorage.setItem(STORE,JSON.stringify(state));return true;}catch{notice('保存に失敗しました。バックアップを保存し、端末の空き容量を確認してください。',true);return false;}}
+function save(){try{localStorage.setItem(STORE,JSON.stringify(state));window.CollectionSync?.changed("background");return true;}catch{notice('保存に失敗しました。バックアップを保存し、端末の空き容量を確認してください。',true);return false;}}
 function rebuild(){
  groups=catalog.backgrounds.map(b=>({...b,name:C.backgroundName(b.name),entries:C.visibleEntries(records).filter(e=>e.backgroundId===b.id)}));
  const extras=new Map();for(const e of state.custom){const id='custom-bg:'+e.background;let g=extras.get(id);if(!g){g={id,name:e.background,date:e.date||null,datePrecision:e.date?'day':'unknown',type:'custom',image:e.image||'',sources:[],entries:[]};extras.set(id,g);}g.entries.push(e);}
@@ -126,6 +126,7 @@ try{
  const response=await fetch('catalog.json?v=20261024-16-fourchecks');if(!response.ok)throw Error('背景データを取得できません');catalog=await response.json();try{const sr=await fetch('sprites.json?v=9-audit');if(sr.ok)sprites=await sr.json();}catch{}if(catalog.parts){const parts=await Promise.all(catalog.parts.map(async path=>{const r=await fetch(path+'?v=20261024-16-fourchecks');if(!r.ok)throw Error('背景一覧を取得できません');return r.json();}));catalog.backgrounds=parts.flat();}records=C.flatten(catalog);
  let raw=null,bad=false;try{const s=localStorage.getItem(STORE);if(s)raw=JSON.parse(s);}catch{bad=true;notice('保存済みデータを読み込めませんでした。元のデータはそのまま残しています。',true);}
  state=C.migrate(raw,records);rebuild();refreshOptions();if(!bad)save();
+ if(!bad)window.CollectionSync?.register('background',{get:()=>state,apply:next=>{state=C.migrate(next,records);localStorage.setItem(STORE,JSON.stringify(state));rebuild();refreshOptions();render();}});
  const future=groups.filter(planned).length;$('intro').textContent=`国内・海外の${groups.length}背景・${C.visibleEntries(records).length.toLocaleString()}組み合わせを収録（開催予定${future}背景を含む）。実装順に表示し、3段階進化の中間は省略しています。「一覧」は1行ずつ、「背景別」は背景ごとに表示。一覧の画像は色違いを標準表示（未実装は通常色）。画像をタップで拡大できます。`;
  $('coverage').textContent=`データ確認日：${catalog.asOf.replaceAll('-','/')}。確認できたロケーション背景・スペシャル背景と告知済み予定を掲載しています。資料間の差異や今後の追加により、未確認の項目が残る場合があります。`;
  for(const source of catalog.sources){const a=el('a','',source.name);a.href=source.url;a.target='_blank';a.rel='noopener noreferrer';$('sources').append(a);}
