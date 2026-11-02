@@ -2,7 +2,8 @@
 const keys=['shiny','shiny_lucky','shiny_bg_lucky','trade_pending'];
 const labels={shiny:'色違い',shiny_lucky:'色キラ',shiny_bg_lucky:'色背景キラ',trade_pending:'交換待ち'};
 const key=(e,t)=>e.id+'|||'+t;
-function visibleEntries(entries){return entries.filter(e=>e.category==='costume'&&!e.hiddenMiddle);}
+function costumeVariant(e){return String(e.name||'').normalize('NFKC').replace(/^(ピカチュウ|ライチュウ)/,'').replace(/\s/g,'').replace('(ホリデー2023)','(ホリデー)');}
+function visibleEntries(entries){const costumes=entries.filter(e=>e.category==='costume'),pikaVariants=new Set(costumes.filter(e=>e.dex===25).map(costumeVariant));return costumes.filter(e=>!e.hiddenMiddle&&!(e.dex===26&&pikaVariants.has(costumeVariant(e))));}
 function available(e,t){if(t==='trade_pending')return true;if(!e.shiny)return false;return t!=='shiny_bg_lucky'||e.backgroundStatus==='yes';}
 function isOwned(e,checks){return keys.slice(0,3).some(t=>available(e,t)&&!!checks[key(e,t)]);}
 function progress(entries,checks){return {owned:entries.filter(e=>isOwned(e,checks)).length,total:entries.length,waiting:entries.filter(e=>checks[key(e,'trade_pending')]).length};}
