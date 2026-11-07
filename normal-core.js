@@ -1,5 +1,5 @@
 (function(root){'use strict';
-const keys=['normal','shiny','lucky','iv100','xxl','xxs','shadow','purified'],labels={normal:'通常色',shiny:'色違い',lucky:'キラ',iv100:'★100',xxl:'XXL',xxs:'XXS',shadow:'シャドウ',purified:'ライト'};
+const keys=['normal','shiny','iv100','lucky','xxl','xxs','shadow','purified'],labels={normal:'通常色',shiny:'色違い',lucky:'キラ',iv100:'★100',xxl:'XXL',xxs:'XXS',shadow:'シャドウ',purified:'ライト'};
 const isPlanned=(e,now=Date.now())=>!!e.releaseAt&&Date.parse(e.releaseAt)>now;
 const key=(e,t)=>e.id+'|||'+t,available=(e,t)=>!isPlanned(e)&&(['shiny','shadow','purified'].includes(t)?e[t]===true:keys.includes(t));
 function attachAvailability(entries,data){if(!data||!Array.isArray(data.shadow)||!Array.isArray(data.purified))throw Error('シャドウ・ライトの実装状況を取得できません');const shadow=new Set(data.shadow),purified=new Set(data.purified);return entries.map(e=>({...e,shadow:shadow.has(e.id),purified:purified.has(e.id)}));}
